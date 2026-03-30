@@ -1,4 +1,4 @@
-# Système de Monitoring pour Ruche Connectée | Projet Arduino (L2)
+# Système de Monitoring pour Ruche Connectée | Projet Arduino (PEIP2)
 
 Développement d'un système embarqué de surveillance apicole réalisé en binôme avec **Yassine MHIMDAT** dans le cadre d'un projet technique de deuxième année à **Polytech Marseille**.
 
