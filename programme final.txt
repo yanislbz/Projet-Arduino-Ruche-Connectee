@@ -1,0 +1,184 @@
+#include <SimpleDHT.h>
+#include <Wire.h>
+#include "rgb_lcd.h"
+
+rgb_lcd lcd;
+SimpleDHT11 dht11(2); // DHT11 sur pin 2
+
+// Pins
+const int pinLaser = 8;
+const int pinVibration = 4;
+const int pinCO = A0;
+const int pinFlamme = A3;
+
+// LED RGB (led rouge = 9, verte = 10, bleue = 11)
+const int ledRouge = 9;
+const int ledVerte = 10;
+const int ledBleue = 11;
+
+// Bouton
+const int buttonPin = 1;
+int val = HIGH;
+int lastVal = HIGH;
+
+// Variables capteurs
+byte temperature = 0;
+byte humidity = 0;
+int coValue = 0;
+int flameValue = 0;
+int vibrationValue = 0;
+
+// Compteur abeilles
+int beeCounter = 0;
+int lastLaserState = HIGH;  // état précédent du photorésistor (laser non coupé)
+
+// Mode écran : 0 = T°+Hum, 1 = compteur abeilles
+int screenMode = 0;
+
+// Alerte
+bool alerte = false;
+String messageAlerte = "";
+
+// Pour défilement du message d'alerte
+int scrollPos = 0;
+unsigned long lastScrollTime = 0;
+const unsigned long scrollDelay = 300; // vitesse défilement
+
+void setup() {
+  Serial.begin(9600);
+  
+  pinMode(pinLaser, OUTPUT);
+  pinMode(pinVibration, INPUT);
+  pinMode(buttonPin, INPUT_PULLUP); // bouton en INPUT_PULLUP pour stabilité
+  
+  pinMode(ledRouge, OUTPUT);
+  pinMode(ledVerte, OUTPUT);
+  pinMode(ledBleue, OUTPUT);
+
+  // LCD
+  lcd.begin(16, 2);
+  lcd.setRGB(0, 255, 0); // Vert par défaut
+
+  // Activer laser
+  digitalWrite(pinLaser, HIGH);
+}
+
+void loop() {
+
+  // --- Lecture capteurs ---
+  if (dht11.read(&temperature, &humidity, NULL) != SimpleDHTErrSuccess) {
+    Serial.println("Erreur lecture DHT11");
+    return;
+  }
+
+  coValue = analogRead(pinCO);
+  flameValue = analogRead(pinFlamme);
+  vibrationValue = digitalRead(pinVibration);
+
+  // --- Gestion compteur abeilles ---
+  int currentLaserState = analogRead(A1); // lire photorésistor A1
+  // On considère que laser coupé = baisse importante valeur
+  if (currentLaserState < 300 && lastLaserState >= 300) {
+    beeCounter++;
+  }
+  lastLaserState = currentLaserState;
+
+  // --- Vérification alertes ---
+  alerte = false;
+  messageAlerte = "";
+
+  if (temperature < 20 || temperature > 40) {
+    alerte = true;
+    messageAlerte = "Temp Anormale";
+  } else if (humidity < 50 || humidity > 70) {
+    alerte = true;
+    messageAlerte = "Humidite Anormale";
+  } else if (coValue > 240) {
+    alerte = true;
+    messageAlerte = "CO Eleve";
+  } else if (flameValue < 350) {
+    alerte = true;
+    messageAlerte = "Flamme detectee";
+  } else if (vibrationValue == 1 ) {
+    alerte = true;
+    messageAlerte = "Ruche Inclinee";
+  }
+
+  // --- LED RGB ---
+  if (alerte) {
+    // Clignote rouge
+    digitalWrite(ledRouge, millis() / 500 % 2); // clignote toutes les 500ms
+    digitalWrite(ledVerte, LOW);
+    digitalWrite(ledBleue, LOW);
+  } else {
+    // Vert fixe
+    digitalWrite(ledRouge, LOW);
+    digitalWrite(ledVerte, HIGH);
+    digitalWrite(ledBleue, LOW);
+  }
+
+  // --- Lecture bouton et changement écran ---
+  val = digitalRead(buttonPin);
+  if (val == LOW && lastVal == HIGH) {
+    screenMode = 1 - screenMode; // change écran
+    delay(500); // anti-rebond
+    scrollPos = 0; // reset défilement message alerte
+  }
+  lastVal = val;
+
+  // --- Affichage LCD ---
+  lcd.clear();
+
+  if (screenMode == 0) {
+    // Écran température et humidité
+    lcd.setCursor(0, 0);
+    lcd.print("T:");
+    lcd.print(temperature);
+    lcd.print("C H:");
+    lcd.print(humidity);
+    lcd.print("%");
+
+    lcd.setCursor(0, 1);
+    if (alerte) {
+      // Défilement message alerte
+      unsigned long now = millis();
+      if (now - lastScrollTime > scrollDelay) {
+        scrollPos++;
+        lastScrollTime = now;
+      }
+      String msg = "ALERTE: " + messageAlerte + "   ";
+      if (scrollPos >= msg.length()) scrollPos = 0;
+      lcd.print(msg.substring(scrollPos) + msg.substring(0, scrollPos));
+    } else {
+      lcd.print("ETAT: OK        ");
+    }
+  } else {
+    // Écran compteur abeilles
+    lcd.setCursor(0, 0);
+    lcd.print("Compteur abeilles");
+    lcd.setCursor(0, 1);
+    lcd.print("Passages:");
+    lcd.print(beeCounter);
+  }
+
+  // --- DEBUG ---
+  Serial.print("Temp: ");
+  Serial.print(temperature);
+  Serial.print(" H: ");
+  Serial.print(humidity);
+  Serial.print(" CO: ");
+  Serial.print(coValue);
+  Serial.print(" Flamme: ");
+  Serial.print(flameValue);
+  Serial.print(" Vib: ");
+  Serial.print(vibrationValue);
+  Serial.print(" Laser: ");
+  Serial.print(currentLaserState);
+  Serial.print(" Compteur: ");
+  Serial.println(beeCounter);
+  Serial.print(" vibration: ");
+  Serial.println(vibrationValue);
+  
+
+  delay(1000); // rafraîchissement écran rapide pour défilement
+}
